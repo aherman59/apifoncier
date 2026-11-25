@@ -21,6 +21,10 @@ Permet d'interroger les indicateurs de consommation d'espace ainsi que les indic
   ```python
   client.indicateurs.conso(code="62", echelle="departements")
   ```
+- Consommation d'espace pour plusieurs communes (une requête par code, résultats concaténés) :
+  ```python
+  client.indicateurs.conso(code=["59009", "59350", "59512"], echelle="communes")
+  ```
 - Consommation d'espace sur une période :
   ```python
   client.indicateurs.conso(code="59001", echelle="communes", annee_min=2015, annee_max=2022)

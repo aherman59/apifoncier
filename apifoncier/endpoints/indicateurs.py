@@ -1,5 +1,6 @@
 from typing import Optional, List, Union
 import pandas as pd
+from tqdm import tqdm
 
 from ..exceptions import ValidationError
 from .base import BaseEndpoint
@@ -22,13 +23,15 @@ class IndicateurEndpoint(BaseEndpoint):
         """
         super().__init__(client)
 
-    def _process_codes(self, codes: Union[str, List[str]], max_codes: int = 10) -> str:
+    def _process_codes(
+        self, codes: Union[str, List[str]], max_codes: Optional[int] = 10
+    ) -> str:
         """
         Traite les codes en entrée (str ou List[str]) et retourne une chaîne formatée.
 
         Args:
             codes: Code unique ou liste de codes.
-            max_codes: Nombre maximum de codes autorisés.
+            max_codes: Nombre maximum de codes autorisés (None = pas de limite).
 
         Returns:
             Chaîne avec les codes séparés par des virgules.
@@ -36,7 +39,7 @@ class IndicateurEndpoint(BaseEndpoint):
         if isinstance(codes, str):
             return codes
         elif isinstance(codes, list):
-            if len(codes) > max_codes:
+            if max_codes is not None and len(codes) > max_codes:
                 raise ValidationError(f"Maximum {max_codes} codes autorisés")
             if not codes:
                 raise ValidationError("La liste de codes ne peut pas être vide")
@@ -48,7 +51,7 @@ class IndicateurEndpoint(BaseEndpoint):
 
     def conso(
         self,
-        code: str,
+        code: Union[str, List[str]],
         echelle: str,
         annee: Optional[int] = None,
         annee_min: Optional[int] = None,
@@ -62,8 +65,11 @@ class IndicateurEndpoint(BaseEndpoint):
         """
         Renvoie les indicateurs de consommation d'espace pour la période comprise entre annee_min et annee_max, bornes incluses.
 
+        Plusieurs codes peuvent être demandés en une fois (liste ou chaîne séparée par des virgules) :
+        une requête est alors envoyée par code et les résultats sont concaténés.
+
         Args:
-            code (str, obligatoire): Code INSEE communal ou départemental.
+            code (str ou List[str], obligatoire): Code(s) INSEE communal(aux) ou départemental(aux).
             echelle (str, obligatoire): 'communes' ou 'departements'.
             annee (int, optionnel): Année spécifique.
             annee_min (int, optionnel): Année minimale.
@@ -83,6 +89,12 @@ class IndicateurEndpoint(BaseEndpoint):
         if echelle not in ["communes", "departements"]:
             raise ValidationError("L'échelle doit être 'communes' ou 'departements'")
 
+        # L'API n'accepte qu'un code par requête (code dans le chemin)
+        codes = self._process_codes(code, max_codes=None).split(",")
+        codes = list(dict.fromkeys(c.strip() for c in codes if c.strip()))
+        if not codes:
+            raise ValidationError("Le paramètre 'code' est obligatoire")
+
         params = self._build_params(
             annee=annee,
             annee_min=annee_min,
@@ -92,13 +104,33 @@ class IndicateurEndpoint(BaseEndpoint):
             page_size=page_size,
         )
 
-        return self._fetch(
-            endpoint=f"/indicateurs/conso_espace/{echelle}/{code}",
-            params=params,
-            format_output=format_output,
-            geo=False,
-            paginate=paginate,
+        if len(codes) == 1:
+            return self._fetch(
+                endpoint=f"/indicateurs/conso_espace/{echelle}/{codes[0]}",
+                params=params,
+                format_output=format_output,
+                geo=False,
+                paginate=paginate,
+            )
+
+        # Plusieurs codes : une barre de progression sur les codes plutôt que par requête
+        iterator = (
+            tqdm(codes, unit="code", desc="/indicateurs/conso_espace")
+            if self.progress_bar
+            else codes
         )
+        frames = [
+            self._collect_pages(
+                f"/indicateurs/conso_espace/{echelle}/{c}",
+                params,
+                geo=False,
+                paginate=paginate,
+                show_progress=False,
+            )
+            for c in iterator
+        ]
+        df = pd.concat(frames, ignore_index=True)
+        return self._to_output(df, format_output=format_output)
 
     # ==================== INDICATEURS DE MARCHÉ - ACCESSIBILITÉ ====================
 

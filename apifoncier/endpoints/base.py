@@ -92,6 +92,7 @@ class BaseEndpoint:
         *,
         geo: bool = False,
         paginate: bool = False,
+        show_progress: bool = True,
     ) -> Union[pd.DataFrame, gpd.GeoDataFrame]:
         """
         Récupère une ou plusieurs pages puis concatène dans un (Geo)DataFrame.
@@ -108,7 +109,7 @@ class BaseEndpoint:
             data, next_url, total = self._extract(resp)
 
             # première initialisation pbar (après avoir obtenu 'total')
-            if self.progress_bar and paginate and data and not pbar:
+            if self.progress_bar and show_progress and paginate and data and not pbar:
                 pbar = tqdm(total=total, unit="enreg.", desc=endpoint)
 
             # conversion page -> DataFrame
